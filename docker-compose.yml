@@ -1,0 +1,93 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: triax-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: triax
+      POSTGRES_PASSWORD: triax_pass
+      POSTGRES_DB: triax_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U triax -d triax_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: triax-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  hardhat:
+    build:
+      context: ./contracts
+    container_name: triax-hardhat
+    volumes:
+      - ./contracts:/app
+      - contracts_node_modules:/app/node_modules
+    ports:
+      - "8545:8545"
+
+  bot:
+    build:
+      context: ./bot
+    container_name: triax-bot
+    volumes:
+      - ./bot:/app
+      - bot_node_modules:/app/node_modules
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://triax:triax_pass@postgres:5432/triax_db
+      REDIS_URL: redis://redis:6379
+      RPC_URL_LOCAL: http://hardhat:8545
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      hardhat:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: triax-frontend
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: development
+      WATCHPACK_POLLING: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  contracts_node_modules:
+  bot_node_modules:
+  frontend_node_modules:
+  frontend_next:
