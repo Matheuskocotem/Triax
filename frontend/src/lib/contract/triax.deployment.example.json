@@ -137,11 +137,29 @@
       "type": "event"
     },
     {
+      "inputs": [],
+      "name": "COMMISSION_BPS",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [
         {
           "internalType": "uint256",
           "name": "amount",
           "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "manager",
+          "type": "address"
         }
       ],
       "name": "deposit",
@@ -173,6 +191,35 @@
           "internalType": "enum Triax.ManagerStatus",
           "name": "status",
           "type": "uint8"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "manager",
+          "type": "address"
+        }
+      ],
+      "name": "getManagerStats",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "totalDeposited",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "investorCount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "commissionAccrued",
+          "type": "uint256"
         }
       ],
       "stateMutability": "view",

@@ -46,7 +46,7 @@ async function main() {
   const depositAmount = ethers.parseUnits(depositEth, 18);
   await (await token.mint(investor.address, ethers.parseUnits('1000', 18))).wait();
   await (await token.connect(investor).approve(address, depositAmount)).wait();
-  await (await triax.connect(investor).deposit(depositAmount)).wait();
+  await (await triax.connect(investor).deposit(depositAmount, manager.address)).wait();
   await (
     await triax.connect(owner).reportYield(investor.address, ethers.parseUnits(yieldEth, 18))
   ).wait();
