@@ -34,15 +34,17 @@ describe('Triax', () => {
     return { triax, token, owner, manager, investor, other };
   }
 
-  // Açúcar: aprova e deposita `amount` do token pelo investidor.
+  // Açúcar: aprova e deposita `amount` do token pelo investidor, vinculando-o
+  // ao gestor `manager`.
   async function approveAndDeposit(
     triax: Awaited<ReturnType<typeof deployFixture>>['triax'],
     token: Awaited<ReturnType<typeof deployFixture>>['token'],
     investor: Awaited<ReturnType<typeof deployFixture>>['investor'],
     amount: bigint,
+    manager: string,
   ) {
     await token.connect(investor).approve(await triax.getAddress(), amount);
-    return triax.connect(investor).deposit(amount);
+    return triax.connect(investor).deposit(amount, manager);
   }
 
   // ---------------------------------------------------------------------------
@@ -90,12 +92,12 @@ describe('Triax', () => {
     // Critério: usuário com depósito → saldo reflete o depósito, posição ativa,
     // e o rendimento reportado (pelo bot/owner) fica legível.
     it('reflete saldo e rendimento após um depósito', async () => {
-      const { triax, token, owner, investor } = await loadFixture(deployFixture);
+      const { triax, token, owner, manager, investor } = await loadFixture(deployFixture);
 
       const deposit = ethers.parseUnits('100', 18);
       const reportedYield = ethers.parseUnits('5', 18);
 
-      await approveAndDeposit(triax, token, investor, deposit);
+      await approveAndDeposit(triax, token, investor, deposit, manager.address);
       await triax.connect(owner).reportYield(investor.address, reportedYield);
 
       const position = await triax.getPosition(investor.address);
@@ -108,9 +110,9 @@ describe('Triax', () => {
     // frontend deriva o APY a partir desse instante. getPosition deve expor
     // `depositedAt` igual ao timestamp do bloco do primeiro depósito.
     it('registra o timestamp do depósito (depositedAt)', async () => {
-      const { triax, token, investor } = await loadFixture(deployFixture);
+      const { triax, token, manager, investor } = await loadFixture(deployFixture);
 
-      const tx = await approveAndDeposit(triax, token, investor, ethers.parseUnits('100', 18));
+      const tx = await approveAndDeposit(triax, token, investor, ethers.parseUnits('100', 18), manager.address);
       const receipt = await tx.wait();
       const block = await ethers.provider.getBlock(receipt!.blockNumber);
 
@@ -161,11 +163,11 @@ describe('Triax', () => {
 
     // Critério: approve + deposit credita a posição e aumenta o saldo do contrato.
     it('approve + deposit credita a posição e o saldo do contrato', async () => {
-      const { triax, token, investor } = await loadFixture(deployFixture);
+      const { triax, token, manager, investor } = await loadFixture(deployFixture);
       const triaxAddress = await triax.getAddress();
 
       await token.connect(investor).approve(triaxAddress, AMOUNT);
-      await triax.connect(investor).deposit(AMOUNT);
+      await triax.connect(investor).deposit(AMOUNT, manager.address);
 
       const position = await triax.getPosition(investor.address);
       expect(position.balance).to.equal(AMOUNT);
@@ -175,27 +177,81 @@ describe('Triax', () => {
 
     // Critério: deposit sem approve prévio deve reverter.
     it('reverte quando não há approve prévio', async () => {
-      const { triax, investor } = await loadFixture(deployFixture);
-      await expect(triax.connect(investor).deposit(AMOUNT)).to.be.reverted;
+      const { triax, manager, investor } = await loadFixture(deployFixture);
+      await expect(triax.connect(investor).deposit(AMOUNT, manager.address)).to.be.reverted;
     });
 
     // Critério: deposit com valor zero deve reverter.
     it('reverte quando o valor do depósito é zero', async () => {
-      const { triax, token, investor } = await loadFixture(deployFixture);
+      const { triax, token, manager, investor } = await loadFixture(deployFixture);
       await token.connect(investor).approve(await triax.getAddress(), AMOUNT);
-      await expect(triax.connect(investor).deposit(0)).to.be.reverted;
+      await expect(triax.connect(investor).deposit(0, manager.address)).to.be.reverted;
     });
 
     // Critério: getPosition retorna o valor depositado em token (não ETH).
     it('getPosition reflete o valor depositado em token', async () => {
-      const { triax, token, investor } = await loadFixture(deployFixture);
+      const { triax, token, manager, investor } = await loadFixture(deployFixture);
       const amount = ethers.parseUnits('250', 18);
 
       await token.connect(investor).approve(await triax.getAddress(), amount);
-      await triax.connect(investor).deposit(amount);
+      await triax.connect(investor).deposit(amount, manager.address);
 
       const position = await triax.getPosition(investor.address);
       expect(position.balance).to.equal(amount);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // TRIAX-10 — Gestor ver total sob gestão e comissões (agregado por gestor).
+  // O depósito passa a vincular o investidor a um gestor (deposit(amount, manager)),
+  // e getManagerStats agrega os investidores daquele gestor.
+  // ---------------------------------------------------------------------------
+  describe('TRIAX-10 — agregado do gestor (getManagerStats)', () => {
+    // Cenário: gestor registrado + 2 investidores vinculados (100 e 50).
+    async function managerStatsFixture() {
+      const base = await deployFixture();
+      const { triax, token, manager, investor, other } = base;
+      const triaxAddress = await triax.getAddress();
+
+      await triax.connect(manager).registerManager('Mesa Alpha', 'Tri BTC/ETH/USDT', 0);
+
+      await token.mint(other.address, ethers.parseUnits('1000', 18));
+
+      const a = ethers.parseUnits('100', 18);
+      const b = ethers.parseUnits('50', 18);
+      await token.connect(investor).approve(triaxAddress, a);
+      await triax.connect(investor).deposit(a, manager.address);
+      await token.connect(other).approve(triaxAddress, b);
+      await triax.connect(other).deposit(b, manager.address);
+
+      return base;
+    }
+
+    // Critério: totalDeposited = soma dos depósitos dos investidores do gestor.
+    it('getManagerStats retorna o total depositado (soma dos investidores)', async () => {
+      const { triax, manager } = await loadFixture(managerStatsFixture);
+      const stats = await triax.getManagerStats(manager.address);
+      expect(stats.totalDeposited).to.equal(ethers.parseUnits('150', 18));
+    });
+
+    // Critério: investorCount = número de investidores vinculados.
+    it('getManagerStats retorna o número de investidores', async () => {
+      const { triax, manager } = await loadFixture(managerStatsFixture);
+      const stats = await triax.getManagerStats(manager.address);
+      expect(stats.investorCount).to.equal(2n);
+    });
+
+    // Critério: commissionAccrued = comissão acumulada do gestor.
+    it('getManagerStats retorna a comissão acumulada', async () => {
+      const { triax, manager } = await loadFixture(managerStatsFixture);
+      const stats = await triax.getManagerStats(manager.address);
+      expect(stats.commissionAccrued).to.equal(0n);
+    });
+
+    // Critério: reverte se o endereço não é um gestor registrado.
+    it('reverte se o endereço não é um gestor registrado', async () => {
+      const { triax, other } = await loadFixture(deployFixture);
+      await expect(triax.getManagerStats(other.address)).to.be.reverted;
     });
   });
 });
