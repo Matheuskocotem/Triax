@@ -1,9 +1,8 @@
 /**
- * Triax.sol — testes (Hardhat + Chai), fase TDD: RED.
+ * Triax.sol — testes (Hardhat + Chai).
  *
- * Estes testes descrevem a interface-alvo do contrato que dá suporte às
- * histórias P0 já cobertas no frontend (TRIAX-5 e TRIAX-7). O contrato ainda
- * NÃO foi implementado — espera-se que TODOS estes testes FALHEM (red).
+ * Cobre TRIAX-5 (gestor), TRIAX-7 (posição) e TRIAX-8 (depósito ERC-20).
+ * O contrato custodia um token ERC-20; depósitos são via approve + deposit.
  *
  * Usa as contas de teste do Hardhat (ethers.getSigners()).
  */
@@ -17,14 +16,33 @@ import { loadFixture } from '@nomicfoundation/hardhat-toolbox/network-helpers';
 const ManagerStatus = { Active: 0n, Paused: 1n, Closed: 2n } as const;
 
 describe('Triax', () => {
-  // Implanta um contrato novo para cada teste e separa os papéis nas contas
-  // de teste do Hardhat: owner (deploy), manager (gestor), investor, other.
+  // Implanta MockERC20 + Triax (que custodia o token) e financia o investidor.
+  // Papéis: owner (deploy/bot), manager (gestor), investor, other.
   async function deployFixture() {
     const [owner, manager, investor, other] = await ethers.getSigners();
+
+    const Token = await ethers.getContractFactory('MockERC20');
+    const token = await Token.deploy();
+    await token.waitForDeployment();
+
     const Triax = await ethers.getContractFactory('Triax');
-    const triax = await Triax.deploy();
+    const triax = await Triax.deploy(await token.getAddress());
     await triax.waitForDeployment();
-    return { triax, owner, manager, investor, other };
+
+    await token.mint(investor.address, ethers.parseUnits('1000', 18));
+
+    return { triax, token, owner, manager, investor, other };
+  }
+
+  // Açúcar: aprova e deposita `amount` do token pelo investidor.
+  async function approveAndDeposit(
+    triax: Awaited<ReturnType<typeof deployFixture>>['triax'],
+    token: Awaited<ReturnType<typeof deployFixture>>['token'],
+    investor: Awaited<ReturnType<typeof deployFixture>>['investor'],
+    amount: bigint,
+  ) {
+    await token.connect(investor).approve(await triax.getAddress(), amount);
+    return triax.connect(investor).deposit(amount);
   }
 
   // ---------------------------------------------------------------------------
@@ -72,12 +90,12 @@ describe('Triax', () => {
     // Critério: usuário com depósito → saldo reflete o depósito, posição ativa,
     // e o rendimento reportado (pelo bot/owner) fica legível.
     it('reflete saldo e rendimento após um depósito', async () => {
-      const { triax, owner, investor } = await loadFixture(deployFixture);
+      const { triax, token, owner, investor } = await loadFixture(deployFixture);
 
-      const deposit = ethers.parseEther('1');
-      const reportedYield = ethers.parseEther('0.05');
+      const deposit = ethers.parseUnits('100', 18);
+      const reportedYield = ethers.parseUnits('5', 18);
 
-      await triax.connect(investor).deposit({ value: deposit });
+      await approveAndDeposit(triax, token, investor, deposit);
       await triax.connect(owner).reportYield(investor.address, reportedYield);
 
       const position = await triax.getPosition(investor.address);
@@ -90,9 +108,9 @@ describe('Triax', () => {
     // frontend deriva o APY a partir desse instante. getPosition deve expor
     // `depositedAt` igual ao timestamp do bloco do primeiro depósito.
     it('registra o timestamp do depósito (depositedAt)', async () => {
-      const { triax, investor } = await loadFixture(deployFixture);
+      const { triax, token, investor } = await loadFixture(deployFixture);
 
-      const tx = await triax.connect(investor).deposit({ value: ethers.parseEther('1') });
+      const tx = await approveAndDeposit(triax, token, investor, ethers.parseUnits('100', 18));
       const receipt = await tx.wait();
       const block = await ethers.provider.getBlock(receipt!.blockNumber);
 
@@ -130,6 +148,54 @@ describe('Triax', () => {
 
       const position = await triax.getPosition(investor.address);
       expect(position.yieldAmount).to.equal(reportedYield);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // TRIAX-8 — Fazer depósito no smart contract (ERC-20: approve + deposit).
+  // O Triax passa a custodiar um token ERC-20 (USDT). deposit(amount) puxa os
+  // tokens via transferFrom — exige approve prévio do investidor.
+  // ---------------------------------------------------------------------------
+  describe('TRIAX-8 — depósito de token ERC-20 (approve + deposit)', () => {
+    const AMOUNT = ethers.parseUnits('100', 18);
+
+    // Critério: approve + deposit credita a posição e aumenta o saldo do contrato.
+    it('approve + deposit credita a posição e o saldo do contrato', async () => {
+      const { triax, token, investor } = await loadFixture(deployFixture);
+      const triaxAddress = await triax.getAddress();
+
+      await token.connect(investor).approve(triaxAddress, AMOUNT);
+      await triax.connect(investor).deposit(AMOUNT);
+
+      const position = await triax.getPosition(investor.address);
+      expect(position.balance).to.equal(AMOUNT);
+      expect(position.active).to.equal(true);
+      expect(await token.balanceOf(triaxAddress)).to.equal(AMOUNT);
+    });
+
+    // Critério: deposit sem approve prévio deve reverter.
+    it('reverte quando não há approve prévio', async () => {
+      const { triax, investor } = await loadFixture(deployFixture);
+      await expect(triax.connect(investor).deposit(AMOUNT)).to.be.reverted;
+    });
+
+    // Critério: deposit com valor zero deve reverter.
+    it('reverte quando o valor do depósito é zero', async () => {
+      const { triax, token, investor } = await loadFixture(deployFixture);
+      await token.connect(investor).approve(await triax.getAddress(), AMOUNT);
+      await expect(triax.connect(investor).deposit(0)).to.be.reverted;
+    });
+
+    // Critério: getPosition retorna o valor depositado em token (não ETH).
+    it('getPosition reflete o valor depositado em token', async () => {
+      const { triax, token, investor } = await loadFixture(deployFixture);
+      const amount = ethers.parseUnits('250', 18);
+
+      await token.connect(investor).approve(await triax.getAddress(), amount);
+      await triax.connect(investor).deposit(amount);
+
+      const position = await triax.getPosition(investor.address);
+      expect(position.balance).to.equal(amount);
     });
   });
 });
