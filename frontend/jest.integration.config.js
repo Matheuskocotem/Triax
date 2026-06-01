@@ -16,6 +16,9 @@ const integrationConfig = {
   },
   testMatch: ['<rootDir>/src/__tests__/integration/**/*.test.{ts,tsx}'],
   testTimeout: 30000,
+  // As suítes de integração compartilham um único node Hardhat — rodar em
+  // série evita contenção/flakiness entre os workers.
+  maxWorkers: 1,
 };
 
 module.exports = createJestConfig(integrationConfig);
