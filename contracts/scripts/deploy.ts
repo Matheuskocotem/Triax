@@ -16,8 +16,14 @@ async function main() {
   // Contas do Hardhat separadas por papel.
   const [owner, manager, investor, unknown] = await ethers.getSigners();
 
+  // Token ERC-20 de teste (18 casas). Em produção seria o USDT real.
+  const Token = await ethers.getContractFactory('MockERC20');
+  const token = await Token.deploy();
+  await token.waitForDeployment();
+  const tokenAddress = await token.getAddress();
+
   const Triax = await ethers.getContractFactory('Triax');
-  const triax = await Triax.deploy();
+  const triax = await Triax.deploy(tokenAddress);
   await triax.waitForDeployment();
   const address = await triax.getAddress();
 
@@ -33,12 +39,16 @@ async function main() {
       .registerManager(managerData.name, managerData.strategy, managerData.status)
   ).wait();
 
-  // Seed TRIAX-7: cria uma posição real (depósito + rendimento reportado).
+  // Seed TRIAX-7/8: financia o investidor, aprova e deposita (ERC-20), e o
+  // owner reporta rendimento. Valores em token (18 casas).
   const depositEth = '1.0';
   const yieldEth = '0.05';
-  await (await triax.connect(investor).deposit({ value: ethers.parseEther(depositEth) })).wait();
+  const depositAmount = ethers.parseUnits(depositEth, 18);
+  await (await token.mint(investor.address, ethers.parseUnits('1000', 18))).wait();
+  await (await token.connect(investor).approve(address, depositAmount)).wait();
+  await (await triax.connect(investor).deposit(depositAmount)).wait();
   await (
-    await triax.connect(owner).reportYield(investor.address, ethers.parseEther(yieldEth))
+    await triax.connect(owner).reportYield(investor.address, ethers.parseUnits(yieldEth, 18))
   ).wait();
 
   const artifact = await artifacts.readArtifact('Triax');
@@ -48,6 +58,7 @@ async function main() {
     chainId: Number(network.chainId),
     rpcUrl: 'http://127.0.0.1:8545',
     address,
+    token: tokenAddress,
     abi: artifact.abi,
     seed: {
       owner: owner.address,
