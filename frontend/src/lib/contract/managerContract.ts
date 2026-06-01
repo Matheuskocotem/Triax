@@ -25,6 +25,15 @@ export interface ManagerData {
   status: ManagerStatus;
 }
 
+// TRIAX-10 — agregado do gestor (total sob gestão, investidores, comissão).
+export interface ManagerStats {
+  /** Total depositado sob gestão (formatado) */
+  totalDeposited: string;
+  investorCount: number;
+  /** Comissão acumulada (formatada) */
+  commissionAccrued: string;
+}
+
 export type PortfolioStatus = 'active' | 'empty' | 'paused';
 
 export interface Position {
@@ -141,4 +150,29 @@ export async function fetchPortfolio(address: string): Promise<PortfolioData> {
     status: active ? 'active' : 'empty',
     positions: active ? [{ asset: 'ETH', amount: formatEther(balance) }] : [],
   };
+}
+
+// TRIAX-10 — agregado do gestor; rejeita "não é gestor" quando o contrato reverte.
+export async function fetchManagerStats(address: string): Promise<ManagerStats> {
+  try {
+    const [totalDeposited, investorCount, commissionAccrued] = (await client.readContract({
+      ...contract,
+      functionName: 'getManagerStats',
+      args: [address as `0x${string}`],
+    })) as readonly [bigint, bigint, bigint];
+
+    return {
+      totalDeposited: formatEther(totalDeposited),
+      investorCount: Number(investorCount),
+      commissionAccrued: formatEther(commissionAccrued),
+    };
+  } catch (err) {
+    if (err instanceof BaseError) {
+      const revert = err.walk((e) => e instanceof ContractFunctionRevertedError);
+      if (revert instanceof ContractFunctionRevertedError) {
+        throw new Error(`Endereço não é um gestor registrado: ${address}`);
+      }
+    }
+    throw err;
+  }
 }
