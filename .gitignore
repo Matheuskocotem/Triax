@@ -49,4 +49,8 @@ coverage/
 coverage.json
 lcov.info
 
+# ── Claude ────────────────────────────────────────────────────
+CLAUDE.md
+claude.md
+
 
