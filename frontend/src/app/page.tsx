@@ -8,6 +8,7 @@ import { useManagerAddress } from '@/hooks/useManagerAddress';
 import { ManagerCard } from '@/components/manager/ManagerCard';
 import { PortfolioPanel } from '@/components/portfolio/PortfolioPanel';
 import { ConnectWalletButton } from '@/components/wallet/ConnectWalletButton';
+import { DepositForm } from '@/components/deposit/DepositForm';
 
 export default function Home() {
   const manager = useManagerAddress();
@@ -22,6 +23,7 @@ export default function Home() {
       <div className="mx-auto max-w-2xl space-y-8 px-6 py-10">
         <ManagerCard address={manager} />
         <PortfolioPanel />
+        <DepositForm />
       </div>
     </main>
   );

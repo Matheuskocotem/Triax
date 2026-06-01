@@ -26,6 +26,13 @@ jest.mock('wagmi', () => {
   };
 });
 
+// O DepositForm da página puxa a camada de escrita (deposit.ts → config.ts →
+// wagmi ESM). Mockada aqui para a página renderizar sem carregar essa cadeia.
+jest.mock('@/lib/contract/deposit', () => ({
+  approveToken: jest.fn(),
+  depositFunds: jest.fn(),
+}));
+
 // URL com o gestor do seed: ?manager=<seed.manager>.
 jest.mock('next/navigation', () => {
   const { deployment } = require('@/lib/contract/deployment');
