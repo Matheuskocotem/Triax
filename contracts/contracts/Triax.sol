@@ -19,6 +19,7 @@ contract Triax is Ownable {
         uint256 balance;
         uint256 yieldAmount;
         bool active;
+        uint256 depositedAt; // timestamp do primeiro depósito (início do rendimento)
     }
 
     mapping(address => Manager) private managers;
@@ -56,6 +57,9 @@ contract Triax is Ownable {
     // TRIAX-7 — investidor deposita; o saldo é creditado e a posição fica ativa.
     function deposit() external payable {
         Position storage p = positions[msg.sender];
+        if (p.depositedAt == 0) {
+            p.depositedAt = block.timestamp;
+        }
         p.balance += msg.value;
         p.active = true;
         emit Deposited(msg.sender, msg.value);
@@ -71,9 +75,9 @@ contract Triax is Ownable {
     function getPosition(address user)
         external
         view
-        returns (uint256 balance, uint256 yieldAmount, bool active)
+        returns (uint256 balance, uint256 yieldAmount, bool active, uint256 depositedAt)
     {
         Position storage p = positions[user];
-        return (p.balance, p.yieldAmount, p.active);
+        return (p.balance, p.yieldAmount, p.active, p.depositedAt);
     }
 }

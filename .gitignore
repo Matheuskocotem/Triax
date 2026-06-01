@@ -15,6 +15,9 @@ cache/
 typechain-types/
 deployments/
 
+# Manifest de deploy local gerado por scripts/deploy.ts (endereço/ABI/seed)
+frontend/src/lib/contract/triax.deployment.json
+
 # ── Environment ───────────────────────────────────────────────
 .env
 .env.local

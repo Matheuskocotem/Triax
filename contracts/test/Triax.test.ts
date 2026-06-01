@@ -85,5 +85,51 @@ describe('Triax', () => {
       expect(position.yieldAmount).to.equal(reportedYield);
       expect(position.active).to.equal(true);
     });
+
+    // Critério: registrar o timestamp do depósito (FATO bruto on-chain) — o
+    // frontend deriva o APY a partir desse instante. getPosition deve expor
+    // `depositedAt` igual ao timestamp do bloco do primeiro depósito.
+    it('registra o timestamp do depósito (depositedAt)', async () => {
+      const { triax, investor } = await loadFixture(deployFixture);
+
+      const tx = await triax.connect(investor).deposit({ value: ethers.parseEther('1') });
+      const receipt = await tx.wait();
+      const block = await ethers.provider.getBlock(receipt!.blockNumber);
+
+      const position = await triax.getPosition(investor.address);
+      expect(position.depositedAt).to.equal(BigInt(block!.timestamp));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Segurança — controle de acesso ao reporte de rendimento (TRIAX-7 / EP-02).
+  // Só o owner (bot/plataforma) pode reportar rendimento; ninguém mais pode
+  // inflar a posição de um investidor.
+  // ---------------------------------------------------------------------------
+  describe('Segurança — controle de acesso de reportYield (TRIAX-7 / EP-02)', () => {
+    // Critério: reportYield chamado por quem NÃO é owner deve reverter e não
+    // alterar a posição do investidor.
+    it('reverte quando reportYield é chamado por um endereço que não é owner', async () => {
+      const { triax, investor, other } = await loadFixture(deployFixture);
+
+      await expect(
+        triax.connect(other).reportYield(investor.address, ethers.parseEther('0.05')),
+      ).to.be.reverted;
+
+      // a posição permanece intacta (rendimento não foi creditado)
+      const position = await triax.getPosition(investor.address);
+      expect(position.yieldAmount).to.equal(0n);
+    });
+
+    // Critério: reportYield chamado pelo owner funciona — credita o rendimento.
+    it('permite que o owner reporte rendimento', async () => {
+      const { triax, owner, investor } = await loadFixture(deployFixture);
+
+      const reportedYield = ethers.parseEther('0.05');
+      await triax.connect(owner).reportYield(investor.address, reportedYield);
+
+      const position = await triax.getPosition(investor.address);
+      expect(position.yieldAmount).to.equal(reportedYield);
+    });
   });
 });
