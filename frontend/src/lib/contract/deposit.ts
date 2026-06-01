@@ -36,13 +36,14 @@ export async function approveToken(amount: bigint): Promise<`0x${string}`> {
   return hash;
 }
 
-// Deposita `amount` no Triax (exige approve prévio).
-export async function depositFunds(amount: bigint): Promise<`0x${string}`> {
+// Deposita `amount` no Triax, vinculando o investidor ao `manager`
+// (exige approve prévio).
+export async function depositFunds(amount: bigint, manager: `0x${string}`): Promise<`0x${string}`> {
   const hash = await writeContract(config, {
     address: TRIAX,
     abi: deployment.abi as Abi,
     functionName: 'deposit',
-    args: [amount],
+    args: [amount, manager],
   });
   await waitForTransactionReceipt(config, { hash });
   return hash;

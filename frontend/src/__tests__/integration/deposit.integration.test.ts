@@ -21,6 +21,7 @@ const wc = writeContract as jest.Mock;
 const wait = waitForTransactionReceipt as jest.Mock;
 
 const AMOUNT = BigInt('100000000000000000000'); // 100 * 1e18
+const MANAGER = '0xabcdef0123456789abcdef0123456789abcdef01' as const;
 
 describe('lib/contract/deposit — approve + deposit (TRIAX-8)', () => {
   beforeEach(() => {
@@ -40,7 +41,7 @@ describe('lib/contract/deposit — approve + deposit (TRIAX-8)', () => {
 
   // depositFunds chama deposit no Triax.
   it('depositFunds chama deposit no Triax', async () => {
-    await depositFunds(AMOUNT);
+    await depositFunds(AMOUNT, MANAGER);
     expect(wc).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ functionName: 'deposit' }),
@@ -50,7 +51,7 @@ describe('lib/contract/deposit — approve + deposit (TRIAX-8)', () => {
   // Fluxo completo: approve antes do deposit.
   it('fluxo completo executa approve e depois deposit', async () => {
     await approveToken(AMOUNT);
-    await depositFunds(AMOUNT);
+    await depositFunds(AMOUNT, MANAGER);
 
     const fns = wc.mock.calls.map((call) => call[1].functionName);
     expect(fns).toEqual(['approve', 'deposit']);

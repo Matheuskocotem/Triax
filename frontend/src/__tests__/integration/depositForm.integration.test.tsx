@@ -23,6 +23,12 @@ let mockAccount: { address?: string; isConnected: boolean } = {
 };
 jest.mock('wagmi', () => ({ useAccount: () => mockAccount }));
 
+// O DepositForm lê ?manager= da URL para vincular o depósito a um gestor.
+jest.mock('next/navigation', () => ({
+  useSearchParams: () =>
+    new URLSearchParams('manager=0xabcdef0123456789abcdef0123456789abcdef01'),
+}));
+
 import { DepositForm } from '@/components/deposit/DepositForm';
 
 const approveMock = approveToken as jest.Mock;

@@ -8,6 +8,7 @@ import { useAccount } from 'wagmi';
 import { parseUnits } from 'viem';
 
 import { approveToken, depositFunds } from '@/lib/contract/deposit';
+import { useManagerAddress } from '@/hooks/useManagerAddress';
 
 // Token de 18 casas (MockERC20 local). USDT real (6) seria nova história.
 const DECIMALS = 18;
@@ -16,6 +17,7 @@ type Status = 'idle' | 'approving' | 'depositing' | 'success' | 'error';
 
 export function DepositForm(): JSX.Element {
   const { isConnected } = useAccount();
+  const manager = useManagerAddress();
   const [value, setValue] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState('');
@@ -29,16 +31,16 @@ export function DepositForm(): JSX.Element {
   }, [value]);
 
   const busy = status === 'approving' || status === 'depositing';
-  const canSubmit = isConnected && amount > BigInt(0) && !busy;
+  const canSubmit = isConnected && !!manager && amount > BigInt(0) && !busy;
 
   async function handleDeposit() {
-    if (!canSubmit) return;
+    if (!canSubmit || !manager) return;
     setError('');
     try {
       setStatus('approving');
       await approveToken(amount);
       setStatus('depositing');
-      await depositFunds(amount);
+      await depositFunds(amount, manager as `0x${string}`);
       setStatus('success');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha no depósito');
