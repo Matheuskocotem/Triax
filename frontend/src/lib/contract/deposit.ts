@@ -60,3 +60,20 @@ export async function withdrawFunds(amount: bigint): Promise<`0x${string}`> {
   await waitForTransactionReceipt(config, { hash });
   return hash;
 }
+
+// TRIAX-12 — o gestor grava sua estratégia on-chain (setStrategy): pares,
+// exchanges e comissão (em bps). Exige a wallet do gestor conectada.
+export async function saveStrategy(
+  pairs: string[],
+  exchanges: string[],
+  commissionBps: number,
+): Promise<`0x${string}`> {
+  const hash = await writeContract(config, {
+    address: TRIAX,
+    abi: deployment.abi as Abi,
+    functionName: 'setStrategy',
+    args: [pairs, exchanges, BigInt(commissionBps)],
+  });
+  await waitForTransactionReceipt(config, { hash });
+  return hash;
+}

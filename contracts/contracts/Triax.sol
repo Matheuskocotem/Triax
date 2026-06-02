@@ -30,13 +30,23 @@ contract Triax is Ownable {
         uint256 commissionAccrued;
     }
 
-    /// Comissão do gestor: 10% do rendimento reportado (fixo por ora; TRIAX-12).
-    uint256 public constant COMMISSION_BPS = 1000; // 1000 / 10000 = 10%
+    struct Strategy {
+        string[] pairs;     // pares de moedas (ex.: "BTC/ETH")
+        string[] exchanges; // exchanges alvo
+        uint256 commissionBps;
+    }
+
+    /// Comissão default: 10% do rendimento quando o gestor ainda não configurou
+    /// a estratégia (commissionBps == 0). TRIAX-12.
+    uint256 public constant DEFAULT_COMMISSION_BPS = 1000; // 1000 / 10000 = 10%
+    /// Teto de comissão configurável: 30%.
+    uint256 public constant MAX_COMMISSION_BPS = 3000;
 
     mapping(address => Manager) private managers;
     mapping(address => Position) private positions;
     mapping(address => ManagerStats) private managerStats; // por gestor
     mapping(address => address) private investorManager;   // investidor → gestor
+    mapping(address => Strategy) private strategies;       // estratégia por gestor
 
     /// Token ERC-20 custodiado pelo contrato (definido no deploy).
     IERC20 public immutable token;
@@ -45,6 +55,7 @@ contract Triax is Ownable {
     event Deposited(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
     event YieldReported(address indexed user, uint256 amount);
+    event StrategyUpdated(address indexed manager, uint256 commissionBps);
 
     error ManagerNotFound(address account);
 
@@ -71,6 +82,31 @@ contract Triax is Ownable {
         Manager storage m = managers[account];
         if (!m.exists) revert ManagerNotFound(account);
         return (m.name, m.strategy, m.status);
+    }
+
+    // TRIAX-12 — o gestor (msg.sender) configura sua estratégia de triangulação:
+    // pares de moedas, exchanges alvo e o percentual de comissão (bps, teto 30%).
+    function setStrategy(
+        string[] calldata pairs,
+        string[] calldata exchanges,
+        uint256 commissionBps
+    ) external {
+        require(managers[msg.sender].exists, "not a manager");
+        require(commissionBps <= MAX_COMMISSION_BPS, "commission too high");
+
+        strategies[msg.sender] = Strategy({ pairs: pairs, exchanges: exchanges, commissionBps: commissionBps });
+
+        emit StrategyUpdated(msg.sender, commissionBps);
+    }
+
+    // TRIAX-12 — lê a estratégia configurada pelo gestor.
+    function getStrategy(address manager)
+        external
+        view
+        returns (string[] memory pairs, string[] memory exchanges, uint256 commissionBps)
+    {
+        Strategy storage s = strategies[manager];
+        return (s.pairs, s.exchanges, s.commissionBps);
     }
 
     // TRIAX-8/10 — investidor deposita `amount` do token e fica vinculado a um
@@ -117,14 +153,16 @@ contract Triax is Ownable {
         emit Withdrawn(msg.sender, amount);
     }
 
-    // TRIAX-7/10 — bot/owner reporta o rendimento de um investidor; 10% vira
-    // comissão acumulada do gestor vinculado.
+    // TRIAX-7/10/12 — bot/owner reporta o rendimento de um investidor; a comissão
+    // do gestor usa o commissionBps da sua estratégia (default 10% se não configurada).
     function reportYield(address user, uint256 amount) external onlyOwner {
         positions[user].yieldAmount += amount;
 
         address manager = investorManager[user];
         if (manager != address(0)) {
-            managerStats[manager].commissionAccrued += (amount * COMMISSION_BPS) / 10000;
+            uint256 bps = strategies[manager].commissionBps;
+            if (bps == 0) bps = DEFAULT_COMMISSION_BPS;
+            managerStats[manager].commissionAccrued += (amount * bps) / 10000;
         }
 
         emit YieldReported(user, amount);
