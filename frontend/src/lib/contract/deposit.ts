@@ -48,3 +48,15 @@ export async function depositFunds(amount: bigint, manager: `0x${string}`): Prom
   await waitForTransactionReceipt(config, { hash });
   return hash;
 }
+
+// TRIAX-11 — saca `amount` do Triax de volta para o usuário.
+export async function withdrawFunds(amount: bigint): Promise<`0x${string}`> {
+  const hash = await writeContract(config, {
+    address: TRIAX,
+    abi: deployment.abi as Abi,
+    functionName: 'withdraw',
+    args: [amount],
+  });
+  await waitForTransactionReceipt(config, { hash });
+  return hash;
+}

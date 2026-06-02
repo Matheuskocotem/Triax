@@ -43,6 +43,7 @@ contract Triax is Ownable {
 
     event ManagerRegistered(address indexed manager, string name, string strategy, ManagerStatus status);
     event Deposited(address indexed user, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
     event YieldReported(address indexed user, uint256 amount);
 
     error ManagerNotFound(address account);
@@ -96,6 +97,24 @@ contract Triax is Ownable {
         require(token.transferFrom(msg.sender, address(this), amount), "transfer failed");
 
         emit Deposited(msg.sender, amount);
+    }
+
+    // TRIAX-11 — investidor saca `amount` (total ou parcial); os tokens voltam
+    // SEMPRE para o próprio msg.sender. Encerra a posição ao zerar o saldo.
+    function withdraw(uint256 amount) external {
+        Position storage p = positions[msg.sender];
+        require(amount > 0, "amount must be > 0");
+        require(amount <= p.balance, "insufficient balance");
+
+        p.balance -= amount;
+        if (p.balance == 0) {
+            p.active = false;
+        }
+
+        // interação por último (CEI).
+        require(token.transfer(msg.sender, amount), "transfer failed");
+
+        emit Withdrawn(msg.sender, amount);
     }
 
     // TRIAX-7/10 — bot/owner reporta o rendimento de um investidor; 10% vira
