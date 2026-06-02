@@ -321,4 +321,86 @@ describe('Triax', () => {
       await expect(triax.connect(other).withdraw(DEPOSIT)).to.be.reverted;
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // TRIAX-12 — Gestor configurar a estratégia de triangulação.
+  // O gestor define on-chain seus pares de moedas, exchanges alvo e o percentual
+  // de comissão (em bps, máximo 3000 = 30%). A comissão deixa de ser fixa em 10%:
+  // reportYield passa a usar o commissionBps da estratégia do gestor.
+  // ---------------------------------------------------------------------------
+  describe('TRIAX-12 — estratégia configurável (setStrategy / getStrategy)', () => {
+    const PAIRS = ['BTC/ETH', 'ETH/USDT', 'USDT/BTC'];
+    const EXCHANGES = ['binance', 'kraken'];
+
+    // Gestor registrado, pronto para configurar a estratégia.
+    async function managerFixture() {
+      const base = await deployFixture();
+      await base.triax.connect(base.manager).registerManager('Mesa Alpha', 'Tri BTC/ETH/USDT', 0);
+      return base;
+    }
+
+    // Critério: um gestor registrado pode definir sua estratégia.
+    it('gestor registrado define a estratégia', async () => {
+      const { triax, manager } = await loadFixture(managerFixture);
+
+      await triax.connect(manager).setStrategy(PAIRS, EXCHANGES, 2000);
+
+      const s = await triax.getStrategy(manager.address);
+      expect(s.pairs).to.deep.equal(PAIRS);
+      expect(s.exchanges).to.deep.equal(EXCHANGES);
+      expect(s.commissionBps).to.equal(2000n);
+    });
+
+    // Critério: commissionBps acima de 3000 (30%) deve reverter.
+    it('reverte quando a comissão excede 30% (3000 bps)', async () => {
+      const { triax, manager } = await loadFixture(managerFixture);
+      await expect(triax.connect(manager).setStrategy(PAIRS, EXCHANGES, 3001)).to.be.reverted;
+    });
+
+    // Critério: aceita exatamente o teto de 30% (3000 bps).
+    it('aceita o teto de 30% (3000 bps)', async () => {
+      const { triax, manager } = await loadFixture(managerFixture);
+      await triax.connect(manager).setStrategy(PAIRS, EXCHANGES, 3000);
+
+      const s = await triax.getStrategy(manager.address);
+      expect(s.commissionBps).to.equal(3000n);
+    });
+
+    // Critério: um endereço que não é gestor registrado não pode definir estratégia.
+    it('reverte quando quem chama não é um gestor registrado', async () => {
+      const { triax, other } = await loadFixture(managerFixture);
+      await expect(triax.connect(other).setStrategy(PAIRS, EXCHANGES, 1000)).to.be.reverted;
+    });
+
+    // Critério: reportYield usa o commissionBps da estratégia do gestor
+    // (não mais o fixo de 10%). Com 20% configurado, a comissão é 20% do yield.
+    it('reportYield usa o commissionBps da estratégia do gestor', async () => {
+      const { triax, token, owner, manager, investor } = await loadFixture(managerFixture);
+
+      await triax.connect(manager).setStrategy(PAIRS, EXCHANGES, 2000); // 20%
+      await approveAndDeposit(triax, token, investor, ethers.parseUnits('100', 18), manager.address);
+
+      const reported = ethers.parseUnits('10', 18);
+      await triax.connect(owner).reportYield(investor.address, reported);
+
+      const stats = await triax.getManagerStats(manager.address);
+      // 20% de 10 = 2
+      expect(stats.commissionAccrued).to.equal(ethers.parseUnits('2', 18));
+    });
+
+    // Critério: gestor sem estratégia configurada → comissão usa o default de
+    // 10% (fallback de 1000 bps quando commissionBps == 0).
+    it('reportYield usa o default de 10% quando o gestor não configurou estratégia', async () => {
+      const { triax, token, owner, manager, investor } = await loadFixture(managerFixture);
+
+      await approveAndDeposit(triax, token, investor, ethers.parseUnits('100', 18), manager.address);
+
+      const reported = ethers.parseUnits('10', 18);
+      await triax.connect(owner).reportYield(investor.address, reported);
+
+      const stats = await triax.getManagerStats(manager.address);
+      // 10% de 10 = 1
+      expect(stats.commissionAccrued).to.equal(ethers.parseUnits('1', 18));
+    });
+  });
 });
