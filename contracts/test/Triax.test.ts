@@ -254,4 +254,71 @@ describe('Triax', () => {
       await expect(triax.getManagerStats(other.address)).to.be.reverted;
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // TRIAX-11 — Solicitar saque dos fundos (withdraw).
+  // O investidor saca total ou parcial; os tokens voltam SEMPRE para o próprio
+  // endereço (msg.sender), nunca para terceiros.
+  // ---------------------------------------------------------------------------
+  describe('TRIAX-11 — saque (withdraw)', () => {
+    const DEPOSIT = ethers.parseUnits('100', 18);
+
+    // Investidor com 100 depositados (vinculado ao gestor).
+    async function fundedFixture() {
+      const base = await deployFixture();
+      await approveAndDeposit(base.triax, base.token, base.investor, DEPOSIT, base.manager.address);
+      return base;
+    }
+
+    // Critério: withdraw transfere os tokens de volta ao usuário.
+    it('transfere os tokens de volta ao usuário', async () => {
+      const { triax, token, investor } = await loadFixture(fundedFixture);
+      const before = await token.balanceOf(investor.address);
+
+      await triax.connect(investor).withdraw(ethers.parseUnits('40', 18));
+
+      const after = await token.balanceOf(investor.address);
+      expect(after - before).to.equal(ethers.parseUnits('40', 18));
+    });
+
+    // Critério: withdraw atualiza o saldo da posição.
+    it('atualiza o saldo da posição', async () => {
+      const { triax, investor } = await loadFixture(fundedFixture);
+      await triax.connect(investor).withdraw(ethers.parseUnits('40', 18));
+
+      const position = await triax.getPosition(investor.address);
+      expect(position.balance).to.equal(ethers.parseUnits('60', 18));
+    });
+
+    // Critério: sacar o saldo total encerra a posição (active = false).
+    it('encerra a posição ao sacar o saldo total', async () => {
+      const { triax, investor } = await loadFixture(fundedFixture);
+      await triax.connect(investor).withdraw(DEPOSIT);
+
+      const position = await triax.getPosition(investor.address);
+      expect(position.balance).to.equal(0n);
+      expect(position.active).to.equal(false);
+    });
+
+    // Critério: sacar mais que o saldo deve reverter.
+    it('reverte ao sacar mais que o saldo', async () => {
+      const { triax, investor } = await loadFixture(fundedFixture);
+      await expect(
+        triax.connect(investor).withdraw(ethers.parseUnits('101', 18)),
+      ).to.be.reverted;
+    });
+
+    // Critério: sacar zero deve reverter.
+    it('reverte ao sacar zero', async () => {
+      const { triax, investor } = await loadFixture(fundedFixture);
+      await expect(triax.connect(investor).withdraw(0)).to.be.reverted;
+    });
+
+    // Critério: só o próprio investidor saca — um terceiro (sem posição) não
+    // consegue acessar fundos alheios; seu withdraw reverte.
+    it('terceiro não consegue sacar (saca só a própria posição)', async () => {
+      const { triax, other } = await loadFixture(fundedFixture);
+      await expect(triax.connect(other).withdraw(DEPOSIT)).to.be.reverted;
+    });
+  });
 });
