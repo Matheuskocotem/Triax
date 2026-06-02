@@ -34,21 +34,42 @@ export function ManagerPanel(): JSX.Element {
   }, [address, isConnected]);
 
   if (!isConnected || !address) {
-    return <p>Conecte sua carteira.</p>;
+    return (
+      <p className="rounded-xl border border-gray-800 bg-gray-900/60 px-6 py-5 text-gray-400">
+        Conecte sua carteira.
+      </p>
+    );
   }
   if (state.phase === 'loading') {
-    return <p>Carregando…</p>;
+    return (
+      <p className="rounded-xl border border-gray-800 bg-gray-900/60 px-6 py-5 text-gray-400">Carregando…</p>
+    );
   }
   if (state.phase === 'not-manager') {
-    return <p>Você não é um gestor registrado.</p>;
+    return (
+      <p className="rounded-xl border border-gray-800 bg-gray-900/60 px-6 py-5 text-gray-500">
+        Você não é um gestor registrado.
+      </p>
+    );
   }
 
   const { stats } = state;
+
   return (
-    <section>
-      <p>Total sob gestão: {stats.totalDeposited}</p>
-      <p>Investidores: {stats.investorCount}</p>
-      <p>Comissão acumulada: {stats.commissionAccrued}</p>
+    <section className="rounded-xl border border-gray-800 bg-gray-900/60 p-6">
+      <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-400">Painel do gestor</h3>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="rounded-xl border border-gray-800 bg-gray-950/60 p-4">
+          <p className="text-lg font-semibold text-violet-400">Total sob gestão: {stats.totalDeposited}</p>
+        </div>
+        <div className="rounded-xl border border-gray-800 bg-gray-950/60 p-4">
+          <p className="text-lg font-semibold text-violet-400">Investidores: {stats.investorCount}</p>
+        </div>
+        <div className="rounded-xl border border-gray-800 bg-gray-950/60 p-4">
+          <p className="text-lg font-semibold text-violet-400">Comissão acumulada: {stats.commissionAccrued}</p>
+        </div>
+      </div>
     </section>
   );
 }

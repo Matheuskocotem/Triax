@@ -43,17 +43,32 @@ export function ConnectWalletButton(): JSX.Element {
 
   if (!isConnected || !address) {
     return (
-      <button onClick={() => connect({ connector: connectors[0] })}>
+      <button
+        onClick={() => connect({ connector: connectors[0] })}
+        className="rounded-full border border-violet-500 bg-violet-600/10 px-5 py-2 text-sm font-medium text-violet-300 transition hover:bg-violet-600 hover:text-white"
+      >
         Connect Wallet
       </button>
     );
   }
 
   return (
-    <div>
-      <span>{shortenAddress(address)}</span>
-      <button onClick={handleSignIn}>Entrar</button>
-      <button onClick={() => disconnect()}>Disconnect</button>
+    <div className="flex items-center gap-3">
+      <span className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1.5 font-mono text-sm text-gray-300">
+        {shortenAddress(address)}
+      </span>
+      <button
+        onClick={handleSignIn}
+        className="rounded-full bg-violet-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500"
+      >
+        Entrar
+      </button>
+      <button
+        onClick={() => disconnect()}
+        className="rounded-full border border-gray-700 px-4 py-1.5 text-sm font-medium text-gray-300 transition hover:border-gray-500 hover:text-white"
+      >
+        Disconnect
+      </button>
     </div>
   );
 }
