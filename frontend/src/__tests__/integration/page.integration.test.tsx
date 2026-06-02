@@ -14,24 +14,26 @@ import { render, screen } from '@testing-library/react';
 import { deployment as manifest } from '@/lib/contract/deployment';
 import HomePage from '@/app/page';
 
-// Borda de wallet: investidor do seed "conectado". require() dentro do factory
-// porque jest.mock é içado acima dos imports.
-jest.mock('wagmi', () => {
-  const { deployment } = require('@/lib/contract/deployment');
-  return {
-    useAccount: () => ({ address: deployment.seed.investor, isConnected: true }),
-    useConnect: () => ({ connect: jest.fn(), connectors: [{ id: 'mock', name: 'Mock' }] }),
-    useDisconnect: () => ({ disconnect: jest.fn() }),
-    useSignTypedData: () => ({ signTypedDataAsync: jest.fn() }),
-  };
-});
+// Borda de wallet: endereço "conectado" é mutável para alternar entre o
+// investidor e o gestor do seed (prefixo `mock` exigido pelo hoist do jest.mock).
+let mockAddress: string = manifest.seed.investor;
+jest.mock('wagmi', () => ({
+  useAccount: () => ({ address: mockAddress, isConnected: true }),
+  useConnect: () => ({ connect: jest.fn(), connectors: [{ id: 'mock', name: 'Mock' }] }),
+  useDisconnect: () => ({ disconnect: jest.fn() }),
+  useSignTypedData: () => ({ signTypedDataAsync: jest.fn() }),
+}));
 
-// O DepositForm da página puxa a camada de escrita (deposit.ts → config.ts →
-// wagmi ESM). Mockada aqui para a página renderizar sem carregar essa cadeia.
+// Camadas de escrita (deposit.ts → config.ts → wagmi ESM) e de bot/sessão
+// mockadas: a página só precisa renderizar, não escrever nem chamar a API.
 jest.mock('@/lib/contract/deposit', () => ({
   approveToken: jest.fn(),
   depositFunds: jest.fn(),
+  withdrawFunds: jest.fn(),
+  saveStrategy: jest.fn(),
 }));
+jest.mock('@/lib/api/operations', () => ({ fetchOperations: jest.fn().mockResolvedValue([]) }));
+jest.mock('@/lib/auth/session', () => ({ getSession: jest.fn().mockReturnValue(null) }));
 
 // URL com o gestor do seed: ?manager=<seed.manager>.
 jest.mock('next/navigation', () => {
@@ -42,6 +44,11 @@ jest.mock('next/navigation', () => {
 });
 
 describe('Página inicial (Iteration 1) com reader real', () => {
+  // Por padrão, o investidor do seed está conectado (tem posição).
+  beforeEach(() => {
+    mockAddress = manifest.seed.investor;
+  });
+
   // Dado ?manager= válido → ManagerCard com dados reais do contrato.
   it('renderiza o ManagerCard com os dados reais do gestor', async () => {
     render(<HomePage />);
@@ -63,5 +70,31 @@ describe('Página inicial (Iteration 1) com reader real', () => {
   it('monta o controle de wallet no header', () => {
     render(<HomePage />);
     expect(screen.getByRole('button', { name: /disconnect|desconectar/i })).toBeInTheDocument();
+  });
+
+  // Wallet conectada + posição → YieldPanel (variação do rendimento) aparece.
+  it('exibe o YieldPanel quando a wallet está conectada e há posição', async () => {
+    render(<HomePage />);
+    expect(await screen.findByText(/varia[çc][ãa]o/i)).toBeInTheDocument();
+  });
+
+  // Wallet conectada + posição → WithdrawForm (campo de saque) aparece.
+  it('exibe o WithdrawForm quando a wallet está conectada e há posição', async () => {
+    render(<HomePage />);
+    expect(await screen.findByLabelText(/valor do saque/i)).toBeInTheDocument();
+  });
+
+  // Endereço conectado é gestor → ManagerPanel (agregado) aparece.
+  it('exibe o ManagerPanel quando o endereço conectado é gestor', async () => {
+    mockAddress = manifest.seed.manager;
+    render(<HomePage />);
+    expect(await screen.findByText(/total sob gest[ãa]o/i)).toBeInTheDocument();
+  });
+
+  // Endereço conectado é gestor → StrategyForm (campos da estratégia) aparece.
+  it('exibe o StrategyForm quando o endereço conectado é gestor', async () => {
+    mockAddress = manifest.seed.manager;
+    render(<HomePage />);
+    expect(await screen.findByLabelText(/pares/i)).toBeInTheDocument();
   });
 });
